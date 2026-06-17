@@ -7,7 +7,6 @@ import { ThemeDashboard } from './components/ThemeDashboard';
 const getAutoWsUrl = () => {
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     
     // If running on a local development setup (localhost, 127.0.0.1, or local LAN IP e.g. 192.168.x.x)
     if (
@@ -20,9 +19,9 @@ const getAutoWsUrl = () => {
       return `ws://${hostname}:8000/ws`;
     }
     
-    // If accessed via a secure production build (like Vercel HTTPS)
-    // Default to secure WebSocket on the loading domain, or prompt for manual override
-    return `${protocol}//${hostname}/ws`;
+    // If accessed via a secure production build (like Vercel HTTPS), default to local loopback backend
+    // so it connects to the user's running local server automatically.
+    return 'ws://127.0.0.1:8000/ws';
   }
   return 'ws://127.0.0.1:8000/ws';
 };
@@ -89,6 +88,7 @@ function App() {
           pulseEnabled={ws.pulseEnabled}
           pulseInterval={ws.pulseInterval}
           pulseDuration={ws.pulseDuration}
+          vibrationMultiplier={ws.vibrationMultiplier}
           lastPulse={ws.lastPulse}
           sequenceActive={ws.sequenceActive}
           playheadTime={ws.playheadTime}
@@ -99,6 +99,7 @@ function App() {
           sendStop={ws.sendStop}
           startSequence={ws.startSequence}
           stopSequence={ws.stopSequence}
+          sendMultiplier={ws.sendMultiplier}
           onOpenTheme={() => setIsThemeOpen(true)}
           activeWsUrl={wsUrl}
           isAutoWsUrl={isAutoUrl}
@@ -110,6 +111,7 @@ function App() {
       <ThemeDashboard
         isOpen={isThemeOpen}
         onClose={() => setIsThemeOpen(false)}
+        activeWsUrl={wsUrl}
       />
 
       {/* Backdrop overlay for drawer on mobile devices */}

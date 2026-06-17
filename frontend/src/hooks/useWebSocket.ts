@@ -8,6 +8,7 @@ export interface HapticState {
   pulseEnabled: boolean;
   pulseInterval: number;
   pulseDuration: number;
+  vibrationMultiplier: number;
 }
 
 export function useWebSocket(url: string) {
@@ -20,6 +21,7 @@ export function useWebSocket(url: string) {
     pulseEnabled: false,
     pulseInterval: 2.0,
     pulseDuration: 300,
+    vibrationMultiplier: 1.0,
   });
 
   const [lastPulse, setLastPulse] = useState<{ timestamp: number; duration: number; lowFreq: number; highFreq: number } | null>(null);
@@ -44,6 +46,19 @@ export function useWebSocket(url: string) {
     ws.onopen = () => {
       console.log('WebSocket connected to backend');
       setWsConnected(true);
+      
+      // Auto-restore saved vibration multiplier from local storage on connect
+      try {
+        const stored = localStorage.getItem('haptic_vibration_multiplier');
+        if (stored) {
+          const mult = parseFloat(stored);
+          if (!isNaN(mult) && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'set_multiplier', multiplier: mult }));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to sync multiplier on connect:', err);
+      }
     };
 
     ws.onmessage = (event) => {
@@ -59,6 +74,7 @@ export function useWebSocket(url: string) {
             pulseEnabled: msg.pulse_enabled,
             pulseInterval: msg.pulse_interval,
             pulseDuration: msg.pulse_duration,
+            vibrationMultiplier: msg.vibration_multiplier !== undefined ? msg.vibration_multiplier : 1.0,
           });
         } else if (msg.type === 'status') {
           setState(prev => ({
@@ -74,6 +90,7 @@ export function useWebSocket(url: string) {
             pulseEnabled: msg.pulse_enabled !== undefined ? msg.pulse_enabled : prev.pulseEnabled,
             pulseInterval: msg.pulse_interval !== undefined ? msg.pulse_interval : prev.pulseInterval,
             pulseDuration: msg.pulse_duration !== undefined ? msg.pulse_duration : prev.pulseDuration,
+            vibrationMultiplier: msg.vibration_multiplier !== undefined ? msg.vibration_multiplier : prev.vibrationMultiplier,
           }));
         } else if (msg.type === 'pulse_event') {
           setLastPulse({
@@ -211,6 +228,15 @@ export function useWebSocket(url: string) {
     }
   }, []);
 
+  const sendMultiplier = useCallback((multiplier: number) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'set_multiplier',
+        multiplier,
+      }));
+    }
+  }, []);
+
   return {
     wsConnected,
     ...state,
@@ -224,5 +250,6 @@ export function useWebSocket(url: string) {
     sendStop,
     startSequence,
     stopSequence,
+    sendMultiplier,
   };
 }
