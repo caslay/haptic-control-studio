@@ -27,6 +27,8 @@ export function useWebSocket(url: string) {
   // Playback Sequencer States
   const [sequenceActive, setSequenceActive] = useState(false);
   const [playheadTime, setPlayheadTime] = useState(0);
+  const [inDelay, setInDelay] = useState(false);
+  const [remainingDelay, setRemainingDelay] = useState(0);
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -83,6 +85,8 @@ export function useWebSocket(url: string) {
         } else if (msg.type === 'sequence_playhead') {
           setPlayheadTime(msg.time);
           setSequenceActive(true);
+          setInDelay(!!msg.in_delay);
+          setRemainingDelay(msg.remaining_delay || 0.0);
           // Sync low/high freq variables dynamically so visual waveform matches output
           setState(prev => ({
             ...prev,
@@ -92,6 +96,8 @@ export function useWebSocket(url: string) {
         } else if (msg.type === 'sequence_finished') {
           setSequenceActive(false);
           setPlayheadTime(0);
+          setInDelay(false);
+          setRemainingDelay(0);
           setState(prev => ({ ...prev, lowFreq: 0.0, highFreq: 0.0 }));
         }
       } catch (err) {
@@ -104,6 +110,8 @@ export function useWebSocket(url: string) {
       setWsConnected(false);
       setSequenceActive(false);
       setPlayheadTime(0);
+      setInDelay(false);
+      setRemainingDelay(0);
       // Reset hardware connection representation when server is unreachable
       setState(prev => ({ ...prev, connected: false, deviceName: 'None' }));
       
@@ -165,6 +173,8 @@ export function useWebSocket(url: string) {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       setSequenceActive(false);
       setPlayheadTime(0);
+      setInDelay(false);
+      setRemainingDelay(0);
       wsRef.current.send(JSON.stringify({
         type: 'stop',
       }));
@@ -172,24 +182,29 @@ export function useWebSocket(url: string) {
   }, []);
 
   // Playback Sequencer Controllers
-  const startSequence = useCallback((duration: number, loop: boolean, lowTrack: any[], highTrack: any[]) => {
+  const startSequence = useCallback((duration: number, loop: boolean, lowTrack: any[], highTrack: any[], loopDelay: number = 0.0) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       setSequenceActive(true);
       setPlayheadTime(0);
+      setInDelay(false);
+      setRemainingDelay(0);
       wsRef.current.send(JSON.stringify({
         type: 'start_sequence',
         duration,
         loop,
+        loop_delay: loopDelay,
         low_track: lowTrack,
         high_track: highTrack
       }));
     }
   }, []);
-
+ 
   const stopSequence = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       setSequenceActive(false);
       setPlayheadTime(0);
+      setInDelay(false);
+      setRemainingDelay(0);
       wsRef.current.send(JSON.stringify({
         type: 'stop_sequence'
       }));
@@ -202,6 +217,8 @@ export function useWebSocket(url: string) {
     lastPulse,
     sequenceActive,
     playheadTime,
+    inDelay,
+    remainingDelay,
     sendVibration,
     sendPulseConfig,
     sendStop,

@@ -15,10 +15,12 @@ interface DashboardProps {
   lastPulse: any;
   sequenceActive: boolean;
   playheadTime: number;
+  inDelay: boolean;
+  remainingDelay: number;
   sendVibration: (low: number, high: number) => void;
   sendPulseConfig: (enabled: boolean, interval: number, duration: number) => void;
   sendStop: () => void;
-  startSequence: (duration: number, loop: boolean, lowTrack: any[], highTrack: any[]) => void;
+  startSequence: (duration: number, loop: boolean, lowTrack: any[], highTrack: any[], loopDelay?: number) => void;
   stopSequence: () => void;
   onOpenTheme: () => void;
 }
@@ -34,6 +36,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   lastPulse,
   sequenceActive,
   playheadTime,
+  inDelay,
+  remainingDelay,
   sendVibration,
   sendPulseConfig,
   sendStop,
@@ -453,6 +457,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 duration={duration}
                 sequenceActive={sequenceActive}
                 playheadTime={playheadTime}
+                inDelay={inDelay}
+                remainingDelay={remainingDelay}
                 onDurationChange={setDuration}
                 startSequence={startSequence}
                 stopSequence={stopSequence}

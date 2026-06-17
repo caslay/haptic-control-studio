@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Play, Square, Repeat } from 'lucide-react';
+import { Play, Square, Repeat, Trash2, Save } from 'lucide-react';
 
 export interface Keyframe {
   id: string;
@@ -11,24 +11,54 @@ interface SplineEditorProps {
   duration: number;
   sequenceActive: boolean;
   playheadTime: number;
+  inDelay?: boolean;
+  remainingDelay?: number;
   onDurationChange: (duration: number) => void;
-  startSequence: (duration: number, loop: boolean, lowTrack: any[], highTrack: any[]) => void;
+  startSequence: (duration: number, loop: boolean, lowTrack: any[], highTrack: any[], loopDelay?: number) => void;
   stopSequence: () => void;
 }
 
 const VIEWBOX_WIDTH = 1000;
 const VIEWBOX_HEIGHT = 150;
 
+const getApiBase = () => {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return `http://${hostname}:8000`;
+    }
+  }
+  return 'http://127.0.0.1:8000';
+};
+
+const API_BASE = getApiBase();
+
+export interface SavedPreset {
+  id: string;
+  name: string;
+  duration: number;
+  lowTrack: Keyframe[];
+  highTrack: Keyframe[];
+}
+
 export const SplineEditor: React.FC<SplineEditorProps> = ({
   duration,
   sequenceActive,
   playheadTime,
+  inDelay = false,
+  remainingDelay = 0.0,
   onDurationChange,
   startSequence,
   stopSequence
 }) => {
   // Loop state
   const [loopMode, setLoopMode] = useState(true);
+  const [loopDelay, setLoopDelay] = useState(0.0);
+
+  // Custom Presets State
+  const [savedPresets, setSavedPresets] = useState<SavedPreset[]>([]);
+  const [newPresetName, setNewPresetName] = useState('');
+  const [selectedPresetId, setSelectedPresetId] = useState('');
 
   // Tracks State: Default tracks have nodes at start (t=0) and end (t=duration)
   const [lowTrack, setLowTrack] = useState<Keyframe[]>([
@@ -45,6 +75,30 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
     { id: 'high-end', time: duration, power: 0.0 }
   ]);
 
+  // Load custom presets on mount from database
+  useEffect(() => {
+    const fetchPresets = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/presets`);
+        if (res.ok) {
+          const data = await res.json();
+          setSavedPresets(data);
+        }
+      } catch (e) {
+        console.error('Failed to load presets from database. Falling back to localStorage.', e);
+        try {
+          const stored = localStorage.getItem('haptic_studio_presets');
+          if (stored) {
+            setSavedPresets(JSON.parse(stored));
+          }
+        } catch (err) {
+          console.error('LocalStorage fallback failed', err);
+        }
+      }
+    };
+    fetchPresets();
+  }, []);
+
   // Adjust end node times if duration changes
   useEffect(() => {
     setLowTrack(prev =>
@@ -53,6 +107,7 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
     setHighTrack(prev =>
       prev.map(k => (k.id === 'high-end' ? { ...k, time: duration } : k))
     );
+    setSelectedPresetId(''); // Reset preset selection on duration change
   }, [duration]);
 
   // Dragging states
@@ -88,6 +143,8 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
 
     const isLow = trackType === 'low';
     const setTrack = isLow ? setLowTrack : setHighTrack;
+
+    setSelectedPresetId(''); // Reset preset selection on modification
 
     setTrack(prev => {
       const sorted = [...prev].sort((a, b) => a.time - b.time);
@@ -137,6 +194,8 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
     const isLow = trackType === 'low';
     const setTrack = isLow ? setLowTrack : setHighTrack;
 
+    setSelectedPresetId(''); // Reset preset selection on modification
+
     // Generate unique ID and insert node
     const id = `${trackType}-custom-${Date.now()}`;
     const newNode: Keyframe = { id, time: timeVal, power: powerVal };
@@ -148,6 +207,8 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
   const handleNodeDoubleClick = (nodeId: string, trackType: 'low' | 'high') => {
     // Protect boundary nodes from deletion
     if (nodeId.endsWith('-start') || nodeId.endsWith('-end')) return;
+
+    setSelectedPresetId(''); // Reset preset selection on modification
 
     const setTrack = trackType === 'low' ? setLowTrack : setHighTrack;
     setTrack(prev => prev.filter(k => k.id !== nodeId));
@@ -182,17 +243,18 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
       window.removeEventListener('mousemove', handleGlobalMouseMove);
       window.removeEventListener('mouseup', handleGlobalMouseUp);
     };
-  }, [draggingNode, lowTrack, highTrack, sequenceActive]);
+  }, [draggingNode, lowTrack, highTrack, sequenceActive, duration, loopMode, loopDelay]);
 
   const triggerPlay = () => {
     // Prepare sorted tracks
     const sortedLow = [...lowTrack].sort((a, b) => a.time - b.time).map(k => ({ time: k.time, power: k.power }));
     const sortedHigh = [...highTrack].sort((a, b) => a.time - b.time).map(k => ({ time: k.time, power: k.power }));
-    startSequence(duration, loopMode, sortedLow, sortedHigh);
+    startSequence(duration, loopMode, sortedLow, sortedHigh, loopDelay);
   };
 
   // Preset Libraries (Sequencer Configurations)
   const loadPreset = (type: 'pulse' | 'engine' | 'wave') => {
+    setSelectedPresetId(`builtin-${type}`);
     if (type === 'pulse') {
       setLowTrack([
         { id: 'low-start', time: 0, power: 1.0 },
@@ -241,6 +303,75 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
     }
   };
 
+  const handlePresetChange = (presetId: string) => {
+    setSelectedPresetId(presetId);
+    if (!presetId) return;
+
+    if (presetId.startsWith('builtin-')) {
+      const type = presetId.replace('builtin-', '') as 'pulse' | 'engine' | 'wave';
+      loadPreset(type);
+    } else {
+      const found = savedPresets.find(p => p.id === presetId);
+      if (found) {
+        setLowTrack(found.lowTrack);
+        setHighTrack(found.highTrack);
+        onDurationChange(found.duration);
+      }
+    }
+  };
+
+  const handleSavePreset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newPresetName.trim();
+    if (!name) return;
+
+    const newPreset: SavedPreset = {
+      id: `custom-${Date.now()}`,
+      name,
+      duration,
+      lowTrack,
+      highTrack
+    };
+
+    const updated = [...savedPresets, newPreset];
+    setSavedPresets(updated);
+    localStorage.setItem('haptic_studio_presets', JSON.stringify(updated));
+    setSelectedPresetId(newPreset.id);
+    setNewPresetName('');
+
+    try {
+      await fetch(`${API_BASE}/api/presets`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: newPreset.id,
+          name: newPreset.name,
+          duration: newPreset.duration,
+          low_track: newPreset.lowTrack,
+          high_track: newPreset.highTrack
+        })
+      });
+    } catch (err) {
+      console.error('Failed to save preset to database:', err);
+    }
+  };
+
+  const handleDeletePreset = async (idToDelete: string) => {
+    if (!idToDelete || idToDelete.startsWith('builtin-')) return;
+    const updated = savedPresets.filter(p => p.id !== idToDelete);
+    setSavedPresets(updated);
+    localStorage.setItem('haptic_studio_presets', JSON.stringify(updated));
+    setSelectedPresetId('');
+
+    try {
+      await fetch(`${API_BASE}/api/presets/${idToDelete}`, {
+        method: 'DELETE'
+      });
+    } catch (err) {
+      console.error('Failed to delete preset from database:', err);
+    }
+  };
+
   // Rendering Helper: Generates SVG path command for linear ramps
   const getPathData = (track: Keyframe[]) => {
     const sorted = [...track].sort((a, b) => a.time - b.time);
@@ -258,22 +389,22 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
   const playheadX = getX(playheadTime);
 
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full space-y-4">
       
       {/* Sequence player header controls */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl glass-panel border border-white/5 bg-black/15">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 rounded-2xl glass-panel border border-white/5 bg-black/15">
         <div className="flex items-center gap-2">
           {sequenceActive ? (
             <button
               onClick={stopSequence}
-              className="py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-[0_0_15px_rgba(220,38,38,0.2)]"
+              className="py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-[0_0_15px_rgba(220,38,38,0.2)] cursor-pointer"
             >
               <Square className="w-3.5 h-3.5 fill-white" /> Stop Pattern
             </button>
           ) : (
             <button
               onClick={triggerPlay}
-              className="py-2.5 px-5 rounded-xl bg-primary hover:bg-primary/95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-[0_0_15px_rgba(59,130,246,0.2)]"
+              className="py-2.5 px-5 rounded-xl bg-primary hover:bg-primary/95 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-[0_0_15px_rgba(59,130,246,0.2)] cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-white" /> Play Pattern
             </button>
@@ -281,7 +412,7 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
 
           <button
             onClick={() => setLoopMode(!loopMode)}
-            className={`p-2.5 rounded-xl border transition-all ${
+            className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
               loopMode
                 ? 'bg-secondary/15 border-secondary/35 text-secondary shadow-[0_0_10px_rgba(16,185,129,0.1)]'
                 : 'border-white/10 text-textSecondary hover:bg-white/5'
@@ -290,12 +421,19 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
           >
             <Repeat className="w-4.5 h-4.5" />
           </button>
+
+          {inDelay && (
+            <span className="text-[10px] font-mono font-bold text-secondary bg-secondary/10 border border-secondary/20 px-2 py-1 rounded-lg animate-pulse flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-ping" /> Delaying {remainingDelay.toFixed(1)}s
+            </span>
+          )}
         </div>
 
-        {/* Timeline Duration Control */}
-        <div className="flex items-center gap-4 w-full sm:w-auto">
-          <div className="flex flex-col w-36">
-            <div className="flex items-center justify-between text-xs font-semibold">
+        {/* Timeline Sliders */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-4 w-full sm:w-auto">
+          {/* Timeline Duration Control */}
+          <div className="flex flex-col w-32 flex-grow sm:flex-none">
+            <div className="flex items-center justify-between text-[11px] font-semibold">
               <span className="text-textSecondary">Duration</span>
               <span className="font-mono text-primary font-bold">{duration.toFixed(1)}s</span>
             </div>
@@ -307,33 +445,89 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
               value={duration}
               onChange={(e) => onDurationChange(parseFloat(e.target.value))}
               disabled={sequenceActive}
-              className="accent-primary h-1.5 mt-1"
+              className="accent-primary h-1 mt-1 cursor-ew-resize disabled:opacity-40"
             />
           </div>
-          
-          {/* Preset Envelope Loaders */}
-          <div className="h-8 w-px bg-white/5" />
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => loadPreset('pulse')}
-              className="px-2.5 py-1.5 rounded-lg border border-white/5 bg-white/2 hover:bg-white/5 text-[10px] font-semibold text-textSecondary hover:text-white transition-all"
-            >
-              Pulse Train
-            </button>
-            <button
-              onClick={() => loadPreset('engine')}
-              className="px-2.5 py-1.5 rounded-lg border border-white/5 bg-white/2 hover:bg-white/5 text-[10px] font-semibold text-textSecondary hover:text-white transition-all"
-            >
-              Accelerate
-            </button>
-            <button
-              onClick={() => loadPreset('wave')}
-              className="px-2.5 py-1.5 rounded-lg border border-white/5 bg-white/2 hover:bg-white/5 text-[10px] font-semibold text-textSecondary hover:text-white transition-all"
-            >
-              Cross-Wave
-            </button>
+
+          {/* Loop Delay Control */}
+          <div className="flex flex-col w-32 flex-grow sm:flex-none">
+            <div className="flex items-center justify-between text-[11px] font-semibold">
+              <span className="text-textSecondary">Loop Delay</span>
+              <span className="font-mono text-secondary font-bold">{loopDelay.toFixed(1)}s</span>
+            </div>
+            <input
+              type="range"
+              min="0.0"
+              max="5.0"
+              step="0.1"
+              value={loopDelay}
+              onChange={(e) => setLoopDelay(parseFloat(e.target.value))}
+              disabled={!loopMode || sequenceActive}
+              className="accent-secondary h-1 mt-1 cursor-ew-resize disabled:opacity-35"
+            />
           </div>
         </div>
+      </div>
+
+      {/* Preset Saving & Loading Library Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl glass-panel border border-white/5 bg-black/10 text-xs">
+        {/* Left Side: Load Preset Dropdown */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-textSecondary font-semibold text-[10px] uppercase tracking-wider">Load Preset Library</label>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedPresetId}
+              onChange={(e) => handlePresetChange(e.target.value)}
+              className="flex-grow py-2 px-3 rounded-xl border border-white/10 bg-slate-950/60 text-white text-xs font-semibold focus:outline-none focus:border-secondary cursor-pointer"
+            >
+              <option value="">-- Load a Preset --</option>
+              <optgroup label="Built-in Presets" className="bg-slate-950 text-white font-medium">
+                <option value="builtin-pulse">Pulse Train</option>
+                <option value="builtin-engine">Accelerate</option>
+                <option value="builtin-wave">Cross-Wave</option>
+              </optgroup>
+              {savedPresets.length > 0 && (
+                <optgroup label="My Custom Presets" className="bg-slate-950 text-white font-medium">
+                  {savedPresets.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            
+            {selectedPresetId && !selectedPresetId.startsWith('builtin-') && (
+              <button
+                type="button"
+                onClick={() => handleDeletePreset(selectedPresetId)}
+                className="py-2 px-3 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold transition-all cursor-pointer flex items-center gap-1"
+                title="Delete Selected Preset"
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Right Side: Save Current As Custom Preset */}
+        <form onSubmit={handleSavePreset} className="flex flex-col gap-1.5 justify-end">
+          <label className="text-textSecondary font-semibold text-[10px] uppercase tracking-wider">Save Current Envelope</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Preset Name..."
+              value={newPresetName}
+              onChange={(e) => setNewPresetName(e.target.value)}
+              className="flex-grow py-2 px-3 rounded-xl border border-white/10 bg-slate-950/60 text-white text-xs placeholder-white/20 focus:outline-none focus:border-primary"
+            />
+            <button
+              type="submit"
+              disabled={!newPresetName.trim()}
+              className="py-2 px-4 rounded-xl bg-primary hover:bg-primary/95 text-white font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 flex items-center gap-1"
+            >
+              <Save className="w-3.5 h-3.5" /> Save
+            </button>
+          </div>
+        </form>
       </div>
 
       {/* Editor grids */}
@@ -349,6 +543,13 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
           </div>
 
           <div className="w-full relative rounded-2xl overflow-hidden glass-panel border border-white/5 bg-black/20">
+            {inDelay && (
+              <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-10 animate-pulse">
+                <span className="text-secondary font-mono font-bold text-xs tracking-wider bg-black/75 px-3 py-1.5 rounded-xl border border-secondary/20 shadow-[0_0_15px_rgba(16,185,129,0.15)] flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-ping" /> Delaying: {remainingDelay.toFixed(1)}s
+                </span>
+              </div>
+            )}
             <svg
               ref={lowSvgRef}
               viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
@@ -448,6 +649,13 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
           </div>
 
           <div className="w-full relative rounded-2xl overflow-hidden glass-panel border border-white/5 bg-black/20">
+            {inDelay && (
+              <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-10 animate-pulse">
+                <span className="text-secondary font-mono font-bold text-xs tracking-wider bg-black/75 px-3 py-1.5 rounded-xl border border-secondary/20 shadow-[0_0_15px_rgba(16,185,129,0.15)] flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-ping" /> Delaying: {remainingDelay.toFixed(1)}s
+                </span>
+              </div>
+            )}
             <svg
               ref={highSvgRef}
               viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}

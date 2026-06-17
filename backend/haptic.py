@@ -56,6 +56,7 @@ class HapticController:
         self.sequence_active = False
         self.sequence_duration = 5.0
         self.sequence_loop = True
+        self.sequence_loop_delay = 0.0
         self.sequence_low_track = []
         self.sequence_high_track = []
         self.sequence_task: Optional[asyncio.Task] = None
@@ -235,7 +236,7 @@ class HapticController:
                 
         return 0.0
 
-    async def start_sequence(self, duration: float, loop: bool, low_track: list, high_track: list):
+    async def start_sequence(self, duration: float, loop: bool, low_track: list, high_track: list, loop_delay: float = 0.0):
         """Spawns an async loop to play and loop a custom haptic pattern sequence."""
         async with self.rumble_lock:
             # Cancel current sequence if running
@@ -252,12 +253,13 @@ class HapticController:
             self.sequence_active = True
             self.sequence_duration = max(0.1, duration)
             self.sequence_loop = loop
+            self.sequence_loop_delay = max(0.0, loop_delay)
             self.sequence_low_track = low_track
             self.sequence_high_track = high_track
             
             # Start background play loop
             self.sequence_task = asyncio.create_task(self._sequence_playback_loop())
-            logger.info(f"Haptic sequence automation started: duration={self.sequence_duration}s, loop={self.sequence_loop}")
+            logger.info(f"Haptic sequence automation started: duration={self.sequence_duration}s, loop={self.sequence_loop}, delay={self.sequence_loop_delay}s")
 
     async def stop_sequence(self):
         """Stops the active sequence task and zeroes motor output."""
@@ -276,13 +278,14 @@ class HapticController:
             while self.sequence_active:
                 current_time = asyncio.get_event_loop().time()
                 elapsed = current_time - start_time
+                total_duration = self.sequence_duration + self.sequence_loop_delay
                 
                 # Check for end of timeline
-                if elapsed >= self.sequence_duration:
+                if elapsed >= total_duration:
                     if self.sequence_loop:
                         # Wrap back to start
-                        start_time = current_time - (elapsed % self.sequence_duration)
-                        elapsed = elapsed % self.sequence_duration
+                        start_time = current_time - (elapsed % total_duration)
+                        elapsed = elapsed % total_duration
                     else:
                         # End playback and notify clients
                         self.sequence_active = False
@@ -291,9 +294,16 @@ class HapticController:
                             await self.broadcast_callback({"type": "sequence_finished"})
                         break
                 
-                # Calculate interpolated vibration targets for this step
-                low_val = self._interpolate_intensity(self.sequence_low_track, elapsed)
-                high_val = self._interpolate_intensity(self.sequence_high_track, elapsed)
+                in_delay = elapsed >= self.sequence_duration
+                if in_delay:
+                    low_val = 0.0
+                    high_val = 0.0
+                    remaining_delay = total_duration - elapsed
+                else:
+                    # Calculate interpolated vibration targets for this step
+                    low_val = self._interpolate_intensity(self.sequence_low_track, elapsed)
+                    high_val = self._interpolate_intensity(self.sequence_high_track, elapsed)
+                    remaining_delay = 0.0
                 
                 # Set physical motor rumbles
                 self._apply_rumble(low_val, high_val)
@@ -302,9 +312,11 @@ class HapticController:
                 if self.broadcast_callback:
                     await self.broadcast_callback({
                         "type": "sequence_playhead",
-                        "time": elapsed,
+                        "time": min(elapsed, self.sequence_duration),
                         "low_val": low_val,
-                        "high_val": high_val
+                        "high_val": high_val,
+                        "in_delay": in_delay,
+                        "remaining_delay": remaining_delay
                     })
                 
                 # Tick at 20Hz
