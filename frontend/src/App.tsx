@@ -42,9 +42,13 @@ function App() {
           pulseInterval={ws.pulseInterval}
           pulseDuration={ws.pulseDuration}
           lastPulse={ws.lastPulse}
+          sequenceActive={ws.sequenceActive}
+          playheadTime={ws.playheadTime}
           sendVibration={ws.sendVibration}
           sendPulseConfig={ws.sendPulseConfig}
           sendStop={ws.sendStop}
+          startSequence={ws.startSequence}
+          stopSequence={ws.stopSequence}
           onOpenTheme={() => setIsThemeOpen(true)}
         />
       </main>
