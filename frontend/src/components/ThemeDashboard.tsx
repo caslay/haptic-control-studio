@@ -51,6 +51,18 @@ export const ThemeDashboard: React.FC<ThemeDashboardProps> = ({ isOpen, onClose 
     { name: 'Ultra-Bold', value: '800' },
   ];
 
+  const getApiBase = () => {
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return `http://${hostname}:8000`;
+      }
+    }
+    return 'http://127.0.0.1:8000';
+  };
+
+  const API_BASE = getApiBase();
+
   // Local state for loaded styles
   const [selectedFont, setSelectedFont] = useState(fontPresets[0].value);
   const [primaryColor, setPrimaryColor] = useState(primaryColorPresets[0].value);
@@ -59,45 +71,127 @@ export const ThemeDashboard: React.FC<ThemeDashboardProps> = ({ isOpen, onClose 
   const [fontSize, setFontSize] = useState(fontSizePresets[1].value);
   const [fontWeight, setFontWeight] = useState(fontWeightPresets[1].value);
 
-  // Load theme settings from localStorage on mount
+  // Load theme settings from database on mount with localStorage fallback
   useEffect(() => {
-    const savedFont = localStorage.getItem('theme-font') || fontPresets[0].value;
-    const savedPrimary = localStorage.getItem('theme-primary') || primaryColorPresets[0].value;
-    const savedSecondary = localStorage.getItem('theme-secondary') || secondaryColorPresets[0].value;
-    const savedBg = localStorage.getItem('theme-bg') || bgPresets[0].value;
-    const savedFontSize = localStorage.getItem('theme-fontSize') || fontSizePresets[1].value;
-    const savedFontWeight = localStorage.getItem('theme-fontWeight') || fontWeightPresets[1].value;
+    const applyTheme = (font: string, primary: string, secondary: string, bg: string, size: string, weight: string) => {
+      setSelectedFont(font);
+      setPrimaryColor(primary);
+      setSecondaryColor(secondary);
+      setBgColor(bg);
+      setFontSize(size);
+      setFontWeight(weight);
 
-    setSelectedFont(savedFont);
-    setPrimaryColor(savedPrimary);
-    setSecondaryColor(savedSecondary);
-    setBgColor(savedBg);
-    setFontSize(savedFontSize);
-    setFontWeight(savedFontWeight);
+      document.documentElement.style.setProperty('--font-family', font);
+      document.documentElement.style.setProperty('--primary-color', primary);
+      document.documentElement.style.setProperty('--secondary-color', secondary);
+      document.documentElement.style.setProperty('--bg-color', bg);
+      document.documentElement.style.setProperty('--font-size-base', size);
+      document.documentElement.style.setProperty('--font-weight-bold', weight);
+    };
 
-    // Apply values to HTML element
-    document.documentElement.style.setProperty('--font-family', savedFont);
-    document.documentElement.style.setProperty('--primary-color', savedPrimary);
-    document.documentElement.style.setProperty('--secondary-color', savedSecondary);
-    document.documentElement.style.setProperty('--bg-color', savedBg);
-    document.documentElement.style.setProperty('--font-size-base', savedFontSize);
-    document.documentElement.style.setProperty('--font-weight-bold', savedFontWeight);
+    const fetchTheme = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/settings/theme_config`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.fontFamily) {
+            applyTheme(
+              data.fontFamily,
+              data.primaryColor,
+              data.secondaryColor,
+              data.bgColor,
+              data.fontSize,
+              data.fontWeight
+            );
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load theme config from database. Using localStorage.', err);
+      }
+
+      // Fallback
+      const savedFont = localStorage.getItem('theme-font') || fontPresets[0].value;
+      const savedPrimary = localStorage.getItem('theme-primary') || primaryColorPresets[0].value;
+      const savedSecondary = localStorage.getItem('theme-secondary') || secondaryColorPresets[0].value;
+      const savedBg = localStorage.getItem('theme-bg') || bgPresets[0].value;
+      const savedFontSize = localStorage.getItem('theme-fontSize') || fontSizePresets[1].value;
+      const savedFontWeight = localStorage.getItem('theme-fontWeight') || fontWeightPresets[1].value;
+      applyTheme(savedFont, savedPrimary, savedSecondary, savedBg, savedFontSize, savedFontWeight);
+    };
+
+    fetchTheme();
   }, []);
+
+  // Sync state helpers
+  const saveThemeToDb = async (font: string, primary: string, secondary: string, bg: string, size: string, weight: string) => {
+    try {
+      await fetch(`${API_BASE}/api/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'theme_config',
+          value: {
+            fontFamily: font,
+            primaryColor: primary,
+            secondaryColor: secondary,
+            bgColor: bg,
+            fontSize: size,
+            fontWeight: weight
+          }
+        })
+      });
+    } catch (err) {
+      console.error('Failed to sync theme config to database:', err);
+    }
+  };
 
   // Update & Apply styles helpers
   const handleStyleChange = (key: string, value: string, localSetter: (val: string) => void, storageKey: string) => {
     localSetter(value);
     document.documentElement.style.setProperty(key, value);
     localStorage.setItem(storageKey, value);
+
+    const font = key === '--font-family' ? value : selectedFont;
+    const primary = key === '--primary-color' ? value : primaryColor;
+    const secondary = key === '--secondary-color' ? value : secondaryColor;
+    const bg = key === '--bg-color' ? value : bgColor;
+    const size = key === '--font-size-base' ? value : fontSize;
+    const weight = key === '--font-weight-bold' ? value : fontWeight;
+
+    saveThemeToDb(font, primary, secondary, bg, size, weight);
   };
 
   const resetToDefault = () => {
-    handleStyleChange('--font-family', fontPresets[0].value, setSelectedFont, 'theme-font');
-    handleStyleChange('--primary-color', primaryColorPresets[0].value, setPrimaryColor, 'theme-primary');
-    handleStyleChange('--secondary-color', secondaryColorPresets[0].value, setSecondaryColor, 'theme-secondary');
-    handleStyleChange('--bg-color', bgPresets[0].value, setBgColor, 'theme-bg');
-    handleStyleChange('--font-size-base', fontSizePresets[1].value, setFontSize, 'theme-fontSize');
-    handleStyleChange('--font-weight-bold', fontWeightPresets[1].value, setFontWeight, 'theme-fontWeight');
+    const font = fontPresets[0].value;
+    const primary = primaryColorPresets[0].value;
+    const secondary = secondaryColorPresets[0].value;
+    const bg = bgPresets[0].value;
+    const size = fontSizePresets[1].value;
+    const weight = fontWeightPresets[1].value;
+
+    setSelectedFont(font);
+    setPrimaryColor(primary);
+    setSecondaryColor(secondary);
+    setBgColor(bg);
+    setFontSize(size);
+    setFontWeight(weight);
+
+    document.documentElement.style.setProperty('--font-family', font);
+    document.documentElement.style.setProperty('--primary-color', primary);
+    document.documentElement.style.setProperty('--secondary-color', secondary);
+    document.documentElement.style.setProperty('--bg-color', bg);
+    document.documentElement.style.setProperty('--font-size-base', size);
+    document.documentElement.style.setProperty('--font-weight-bold', weight);
+
+    localStorage.setItem('theme-font', font);
+    localStorage.setItem('theme-primary', primary);
+    localStorage.setItem('theme-secondary', secondary);
+    localStorage.setItem('theme-bg', bg);
+    localStorage.setItem('theme-fontSize', size);
+    localStorage.setItem('theme-fontWeight', weight);
+
+    saveThemeToDb(font, primary, secondary, bg, size, weight);
   };
 
   if (!isOpen) return null;

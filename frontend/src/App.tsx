@@ -44,6 +44,8 @@ function App() {
           lastPulse={ws.lastPulse}
           sequenceActive={ws.sequenceActive}
           playheadTime={ws.playheadTime}
+          inDelay={ws.inDelay}
+          remainingDelay={ws.remainingDelay}
           sendVibration={ws.sendVibration}
           sendPulseConfig={ws.sendPulseConfig}
           sendStop={ws.sendStop}

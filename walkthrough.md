@@ -31,29 +31,46 @@ haptic_control/
 ---
 
 ## 2. Component Highlights
-
-### 🕹️ Hardware Engine & Async Pulse Logic ([haptic.py](file:///c:/My%20Files/Work/Lab/haptic_control/backend/haptic.py))
-- Directly calls standard Windows `xinput1_4.dll` methods via standard library `ctypes`.
-- Automatically polls for connected devices every `1.0s` without blocking.
-- Implements **Repeat Mode** (Pulse Logic) via a non-blocking `asyncio.sleep` timer loop.
-- Employs a safety cleanup check: if the socket connection is lost or the server stops, both motors are instantly zeroed.
-
-### 🌐 FastAPI Server ([main.py](file:///c:/My%20Files/Work/Lab/haptic_control/backend/main.py))
-- Uses WebSockets to push state updates instantly.
-- Echoes state synchronizations to ensure multiple client tabs remain perfectly aligned.
-
-### 🎨 Appearance Configurator ([ThemeDashboard.tsx](file:///c:/My%20Files/Work/Lab/haptic_control/frontend/src/components/ThemeDashboard.tsx))
-- Dynamically binds configuration values (Accent Colors, Background Themes, Typography, and Weights) to CSS Custom Variables (e.g. `--primary-color`).
-- Modifies theme variables on `document.documentElement` in real time, making changes compile instantly across the Tailwind environment.
-- Persists user preferences using `localStorage`.
-
-### 📉 Composite Telemetry oscilloscope ([VisualPulse.tsx](file:///c:/My%20Files/Work/Lab/haptic_control/frontend/src/components/VisualPulse.tsx))
-- Renders an interactive composite wave simulation on a canvas.
-- Dynamically blends slow, high-amplitude waves (low-frequency rumble) with rapid, fine oscillations (high-frequency buzz) and overlays radial rings when repeat pulse signals trigger.
-
----
-
-## 3. Verification & Execution Results
+ 
+ ### 🕹️ Hardware Engine & Async Pulse Logic ([haptic.py](file:///c:/My%20Files/Work/Lab/haptic_control/backend/haptic.py))
+ - Directly calls standard Windows `xinput1_4.dll` methods via standard library `ctypes`.
+ - Automatically polls for connected devices every `1.0s` without blocking.
+ - Implements **Repeat Mode** (Pulse Logic) via a non-blocking `asyncio.sleep` timer loop.
+ - Implements **Spline Timeline Sequencing** running at 20Hz, supporting linear envelope interpolation for high-precision tactile feedback curves.
+ - Implements a **Loop Delay timer** running on the backend. When a loop completes, the engine silences rumble outputs and counts down before the next iteration, sending live timer metadata.
+ - Employs a safety cleanup check: if the socket connection is lost or the server stops, both motors are instantly zeroed.
+ 
+ ### 🌐 FastAPI Server ([main.py](file:///c:/My%20Files/Work/Lab/haptic_control/backend/main.py))
+ - Uses WebSockets to push state updates instantly.
+ - Echoes state synchronizations to ensure multiple client tabs remain perfectly aligned.
+ - Forwards timeline keyframe vectors and loop delay parameters to the background player.
+ 
+ ### 📈 Timeline Spline Editor ([SplineEditor.tsx](file:///c:/My%20Files/Work/Lab/haptic_control/frontend/src/components/SplineEditor.tsx))
+ - Hosts two synchronized SVG envelope tracks for drawing custom vibration shapes.
+ - **Categorized Preset Library:** Replaces simple preset buttons with a grouped selector for built-in algorithms (Pulse Train, Accelerate, Cross-Wave) and custom-drawn user shapes.
+ - **Custom Preset Manager:** Saves user patterns (including keyframe nodes and timeline durations) to `localStorage` under custom names, and provides custom deletion.
+ - **Precision Timing Sliders:** Includes a Duration slider and a Loop Delay slider to customize sequence repetitions.
+ - **Visual Delay Feedback Overlay:** When the sequencer is in its delay phase, a translucent glass blur overlay drops onto the SVG timelines displaying a live countdown timer (e.g., `Delaying: 1.2s`).
+ 
+ ### 🎨 Appearance Configurator ([ThemeDashboard.tsx](file:///c:/My%20Files/Work/Lab/haptic_control/frontend/src/components/ThemeDashboard.tsx))
+ - Dynamically binds configuration values (Accent Colors, Background Themes, Typography, and Weights) to CSS Custom Variables (e.g. `--primary-color`).
+ - Modifies theme variables on `document.documentElement` in real time, making changes compile instantly across the Tailwind environment.
+ - Persists user preferences using `localStorage`.
+ 
+ ### 📉 Composite Telemetry oscilloscope ([VisualPulse.tsx](file:///c:/My%20Files/Work/Lab/haptic_control/frontend/src/components/VisualPulse.tsx))
+ - Renders an interactive composite wave simulation on a canvas.
+ - Dynamically blends slow, high-amplitude waves (low-frequency rumble) with rapid, fine oscillations (high-frequency buzz) and overlays radial rings when repeat pulse signals trigger.
+ - Automatically flattens back to a rest line during the loop delay countdown phase.
+ 
+ ### ☁️ Neon SQL Cloud Persistence ([database.py](file:///c:/My%20Files/Work/Lab/haptic_control/backend/database.py))
+ - Connects the FastAPI backend to your Neon serverless Postgres database using SQLAlchemy.
+ - Automatically creates and provisions relational schemas for `presets` and `settings` on server startup.
+ - Integrates full CRUD REST endpoints for managing preset keyframe nodes and appearance layout settings.
+ - Employs a local cache fallback strategy (`localStorage` syncing) in components to guarantee usability even if connection status drops.
+ 
+ ---
+ 
+ ## 3. Verification & Execution Results
 
 ### Backend Verification
 The backend scripts are syntax error free and compilation is verified:
