@@ -1,13 +1,61 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
 import { Dashboard } from './components/Dashboard';
 import { ThemeDashboard } from './components/ThemeDashboard';
 
+// Helper to determine the initial/default WebSocket URL based on how the page is loaded
+const getAutoWsUrl = () => {
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    
+    // If running on a local development setup (localhost, 127.0.0.1, or local LAN IP e.g. 192.168.x.x)
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      /^192\.168\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname)
+    ) {
+      return `ws://${hostname}:8000/ws`;
+    }
+    
+    // If accessed via a secure production build (like Vercel HTTPS)
+    // Default to secure WebSocket on the loading domain, or prompt for manual override
+    return `${protocol}//${hostname}/ws`;
+  }
+  return 'ws://127.0.0.1:8000/ws';
+};
+
 function App() {
   const [isThemeOpen, setIsThemeOpen] = useState(false);
 
-  // Initialize WebSocket hook targeting local FastAPI server
-  const ws = useWebSocket('ws://127.0.0.1:8000/ws');
+  // Custom WebSocket URL config state
+  const [wsUrl, setWsUrl] = useState(() => {
+    const stored = localStorage.getItem('haptic_custom_ws_url');
+    return stored || getAutoWsUrl();
+  });
+
+  // Keep track of whether it is an autodetected URL or manual override
+  const [isAutoUrl, setIsAutoUrl] = useState(() => {
+    return !localStorage.getItem('haptic_custom_ws_url');
+  });
+
+  // Initialize WebSocket hook targeting resolved/custom URL
+  const ws = useWebSocket(wsUrl);
+
+  const saveCustomWsUrl = useCallback((newUrl: string) => {
+    if (!newUrl.trim()) {
+      // Revert to autodetected
+      localStorage.removeItem('haptic_custom_ws_url');
+      setWsUrl(getAutoWsUrl());
+      setIsAutoUrl(true);
+    } else {
+      localStorage.setItem('haptic_custom_ws_url', newUrl);
+      setWsUrl(newUrl);
+      setIsAutoUrl(false);
+    }
+  }, []);
 
   // Bind 'Escape' key for safety stop
   useEffect(() => {
@@ -52,6 +100,9 @@ function App() {
           startSequence={ws.startSequence}
           stopSequence={ws.stopSequence}
           onOpenTheme={() => setIsThemeOpen(true)}
+          activeWsUrl={wsUrl}
+          isAutoWsUrl={isAutoUrl}
+          onSaveWsUrl={saveCustomWsUrl}
         />
       </main>
 

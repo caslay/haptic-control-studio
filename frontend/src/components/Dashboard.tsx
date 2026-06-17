@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Power, Settings, ShieldAlert, Activity, Radio, Sparkles } from 'lucide-react';
+import { Power, Settings, ShieldAlert, Activity, Radio, Sparkles, Wifi } from 'lucide-react';
 import { VisualPulse } from './VisualPulse';
 import { SplineEditor } from './SplineEditor';
 
@@ -23,9 +23,14 @@ interface DashboardProps {
   startSequence: (duration: number, loop: boolean, lowTrack: any[], highTrack: any[], loopDelay?: number) => void;
   stopSequence: () => void;
   onOpenTheme: () => void;
+  // Connection Configuration Props
+  activeWsUrl: string;
+  isAutoWsUrl: boolean;
+  onSaveWsUrl: (url: string) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
+  wsConnected,
   connected,
   deviceName,
   lowFreq,
@@ -43,7 +48,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   sendStop,
   startSequence,
   stopSequence,
-  onOpenTheme
+  onOpenTheme,
+  activeWsUrl,
+  isAutoWsUrl,
+  onSaveWsUrl
 }) => {
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState<'live' | 'sequencer'>('live');
@@ -56,6 +64,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [localHigh, setLocalHigh] = useState(highFreq);
   const [localInterval, setLocalInterval] = useState(pulseInterval);
   const [localDuration, setLocalDuration] = useState(pulseDuration);
+
+  // Connection settings modal state
+  const [isConnModalOpen, setIsConnModalOpen] = useState(false);
+  const [inputWsUrl, setInputWsUrl] = useState(activeWsUrl);
+
+  // Sync inputs with active configs
+  useEffect(() => {
+    setInputWsUrl(activeWsUrl);
+  }, [activeWsUrl]);
 
   // Sync local sliders state with server updates
   useEffect(() => {
@@ -163,9 +180,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Server Connection settings icon */}
+          <button
+            onClick={() => setIsConnModalOpen(true)}
+            className={`p-2.5 rounded-xl glass-panel flex items-center justify-center cursor-pointer transition-all border ${
+              wsConnected
+                ? 'border-secondary/20 bg-secondary/5 text-secondary hover:text-secondary/90 hover:bg-secondary/10 shadow-[0_0_10px_rgba(16,185,129,0.05)]'
+                : 'border-rose-500/20 bg-rose-500/5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 shadow-[0_0_10px_rgba(239,68,68,0.05)]'
+            }`}
+            title="Server Connection Settings"
+          >
+            <Wifi className="w-4.5 h-4.5" />
+          </button>
+
           <button
             onClick={onOpenTheme}
-            className="p-2.5 rounded-xl glass-panel text-textSecondary hover:text-white glass-panel-hover flex items-center justify-center cursor-pointer"
+            className="p-2.5 rounded-xl glass-panel text-textSecondary hover:text-white glass-panel-hover flex items-center justify-center cursor-pointer border border-white/5"
             title="Appearance Settings"
           >
             <Settings className="w-4.5 h-4.5" />
@@ -501,6 +531,107 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
       </div>
+
+      {/* Server Connection Settings Modal */}
+      {isConnModalOpen && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          {/* Backdrop */}
+          <div 
+            onClick={() => setIsConnModalOpen(false)}
+            className="absolute inset-0 bg-black/70 backdrop-blur-md"
+          />
+          
+          {/* Dialog Card */}
+          <div className="relative w-full max-w-md bg-slate-950 border border-white/10 rounded-3xl p-6 md:p-8 space-y-5 shadow-[0_10px_50px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-white/5">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-textPrimary flex items-center gap-2">
+                <Wifi className="w-4 h-4 text-primary" /> Connection Configuration
+              </h3>
+              <button 
+                onClick={() => setIsConnModalOpen(false)}
+                className="text-[10px] font-bold bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-lg text-textSecondary hover:text-white cursor-pointer transition-all"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Connection Status Flag */}
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-black/30 border border-white/5 text-xs">
+                <span className="text-textSecondary font-semibold">Websocket Status</span>
+                <span className={`px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center gap-1.5 ${
+                  wsConnected 
+                    ? 'bg-secondary/15 text-secondary border border-secondary/35'
+                    : 'bg-rose-500/15 text-rose-400 border border-rose-500/35'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-secondary animate-pulse' : 'bg-rose-400'}`} />
+                  {wsConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+
+              {/* URL Form Input */}
+              <div className="space-y-2">
+                <label className="text-textSecondary font-bold text-[10px] uppercase tracking-wider block">WebSocket Backend Address</label>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="text"
+                    value={inputWsUrl}
+                    onChange={(e) => setInputWsUrl(e.target.value)}
+                    placeholder="ws://192.168.1.XX:8000/ws"
+                    className="w-full py-2.5 px-3 rounded-xl border border-white/10 bg-slate-900/60 text-white text-xs font-mono focus:outline-none focus:border-primary placeholder-white/20"
+                  />
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        onSaveWsUrl(inputWsUrl);
+                        setIsConnModalOpen(false);
+                      }}
+                      className="flex-grow py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 text-white text-xs font-bold transition-all cursor-pointer shadow-[0_2px_10px_rgba(59,130,246,0.15)]"
+                    >
+                      Save & Connect
+                    </button>
+                    {!isAutoWsUrl && (
+                      <button
+                        onClick={() => {
+                          onSaveWsUrl(''); // Clears storage and resets
+                          setIsConnModalOpen(false);
+                        }}
+                        className="py-2 px-3 rounded-xl border border-white/10 hover:bg-white/5 text-xs text-textSecondary font-semibold cursor-pointer transition-all"
+                        title="Reset to Auto-detect"
+                      >
+                        Reset Auto
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Instructions and Guidelines */}
+              <div className="pt-3.5 text-[10px] text-textSecondary leading-relaxed space-y-2.5 border-t border-white/5">
+                <p className="font-bold text-textPrimary uppercase tracking-wider text-[9px]">How to connect from other devices:</p>
+                
+                <div className="space-y-1 bg-white/2 p-2.5 rounded-xl border border-white/5">
+                  <p className="font-bold text-textPrimary flex items-center gap-1">📱 1. Mobile Wi-Fi Connection</p>
+                  <p>Connect your phone and laptop to the **same Wi-Fi network**. Open the app on your phone via the LAN host address shown in your laptop terminal:</p>
+                  <p className="font-mono text-[9px] text-primary mt-1 bg-black/40 px-2 py-1 rounded border border-white/5">
+                    http://{window.location.hostname}:5173
+                  </p>
+                </div>
+
+                <div className="space-y-1 bg-white/2 p-2.5 rounded-xl border border-white/5">
+                  <p className="font-bold text-textPrimary flex items-center gap-1">🔒 2. Production Vercel (HTTPS)</p>
+                  <p>Secure pages block local network <code>ws://</code> requests. If accessing via Vercel, run a secure tunnel on your laptop:</p>
+                  <p className="font-mono text-[9px] text-secondary mt-1 bg-black/40 px-2 py-1 rounded border border-white/5">
+                    ngrok http 8000
+                  </p>
+                  <p className="mt-1">Then, copy the secure <code>wss://...</code> URL from your terminal and paste it here.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
