@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "backend": "cd ../backend && python -m uvicorn main:app --host 127.0.0.1 --port 8000",
+    "dev": "vite --host",
+    "backend": "cd ../backend && python -m uvicorn main:app --host 0.0.0.0 --port 8000",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

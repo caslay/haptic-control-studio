@@ -55,7 +55,13 @@ haptic_control/
  - **Enhanced Canvas Space:** Expanded the graph timeline editor height by increasing `VIEWBOX_HEIGHT` from `150` to `250` SVG units, giving a cleaner aspect ratio and more space to place and modify points.
  - **Overlay Hitboxes (r=20):** Keyframes are wrapped in `<g className="group/node">` containing a transparent circle with `r={20}` for mouse event targeting and a visible point `r={8}`. This provides a 3x larger mouse click and drag target, while changing colors and scaling up smoothly on hover.
  - **Proximity click safeguards:** Implemented a Euclidean distance proximity check in SVG coordinates (25 units). Click-to-spawn keyframes are ignored if the coordinate is too close to any existing point, preventing duplicate or accidental point additions when users drag points.
- 
+
+ ### 📱 Server Connection Configurator ([App.tsx](file:///c:/My%20Files/Work/Lab/haptic_control/frontend/src/App.tsx), [Dashboard.tsx](file:///c:/My%20Files/Work/Lab/haptic_control/frontend/src/components/Dashboard.tsx))
+ - **Dynamic LAN IP Resolution:** Auto-detects the client loading address (loopback IP vs. local network IP) to connect the WebSocket client hook directly back to your laptop's backend, enabling mobile connection out-of-the-box.
+ - **Server Connection settings modal:** Embeds a beautiful network management modal displaying the real-time websocket connectivity state, current URL, and detailed setup guides for home Wi-Fi and Vercel/ngrok tunneling.
+ - **Custom URL Override:** Allows users to manually key in custom backend addresses (e.g. `wss://xxxx.ngrok.app/ws`), storing preferences in local storage so you can easily connect secure Vercel sites to local ports.
+ - **Network Host Binding:** Bound scripts in `package.json` to local networks: `vite --host` exposes the web page to your local Wi-Fi, and `uvicorn --host 0.0.0.0` exposes the API server.
+
  ### 🎨 Appearance Configurator ([ThemeDashboard.tsx](file:///c:/My%20Files/Work/Lab/haptic_control/frontend/src/components/ThemeDashboard.tsx))
  - Dynamically binds configuration values (Accent Colors, Background Themes, Typography, and Weights) to CSS Custom Variables (e.g. `--primary-color`).
  - Modifies theme variables on `document.documentElement` in real time, making changes compile instantly across the Tailwind environment.
