@@ -52,6 +52,14 @@ class HapticController:
         self.pulse_duration = 300.0   # Milliseconds
         self.pulse_task: Optional[asyncio.Task] = None
 
+        # Sequence settings (Automation Envelope)
+        self.sequence_active = False
+        self.sequence_duration = 5.0
+        self.sequence_loop = True
+        self.sequence_low_track = []
+        self.sequence_high_track = []
+        self.sequence_task: Optional[asyncio.Task] = None
+
         # Lock to prevent concurrent rumble writes overriding each other
         self.rumble_lock = asyncio.Lock()
 
@@ -191,5 +199,119 @@ class HapticController:
             if self.pulse_task:
                 self.pulse_task.cancel()
                 self.pulse_task = None
+            if self.sequence_task:
+                self.sequence_task.cancel()
+                self.sequence_task = None
+            self.sequence_active = False
             self._apply_rumble(0.0, 0.0)
             logger.info("Hardware controller stopped and cleared.")
+
+    def _interpolate_intensity(self, track: list, t: float) -> float:
+        """Helper to compute linear interpolation of motor power at elapsed time t."""
+        if not track:
+            return 0.0
+        
+        # Sort track by time coordinate
+        sorted_track = sorted(track, key=lambda k: k.get("time", 0.0))
+        
+        # Boundary checks
+        if t <= sorted_track[0]["time"]:
+            return sorted_track[0]["power"]
+        if t >= sorted_track[-1]["time"]:
+            return sorted_track[-1]["power"]
+            
+        # Find the envelope keyframes enclosing the current time t
+        for i in range(len(sorted_track) - 1):
+            k1 = sorted_track[i]
+            k2 = sorted_track[i+1]
+            t1, p1 = k1["time"], k1["power"]
+            t2, p2 = k2["time"], k2["power"]
+            
+            if t1 <= t <= t2:
+                if t2 == t1:
+                    return p1
+                # Interpolate power value
+                return p1 + (p2 - p1) * (t - t1) / (t2 - t1)
+                
+        return 0.0
+
+    async def start_sequence(self, duration: float, loop: bool, low_track: list, high_track: list):
+        """Spawns an async loop to play and loop a custom haptic pattern sequence."""
+        async with self.rumble_lock:
+            # Cancel current sequence if running
+            if self.sequence_task:
+                self.sequence_task.cancel()
+                self.sequence_task = None
+                
+            # Disable legacy pulse mode if running
+            if self.pulse_task:
+                self.pulse_task.cancel()
+                self.pulse_task = None
+                self.pulse_enabled = False
+                
+            self.sequence_active = True
+            self.sequence_duration = max(0.1, duration)
+            self.sequence_loop = loop
+            self.sequence_low_track = low_track
+            self.sequence_high_track = high_track
+            
+            # Start background play loop
+            self.sequence_task = asyncio.create_task(self._sequence_playback_loop())
+            logger.info(f"Haptic sequence automation started: duration={self.sequence_duration}s, loop={self.sequence_loop}")
+
+    async def stop_sequence(self):
+        """Stops the active sequence task and zeroes motor output."""
+        async with self.rumble_lock:
+            self.sequence_active = False
+            if self.sequence_task:
+                self.sequence_task.cancel()
+                self.sequence_task = None
+            self._apply_rumble(0.0, 0.0)
+            logger.info("Haptic sequence automation stopped.")
+
+    async def _sequence_playback_loop(self):
+        """Asynchronous execution loop that steps through the sequence timeline."""
+        start_time = asyncio.get_event_loop().time()
+        try:
+            while self.sequence_active:
+                current_time = asyncio.get_event_loop().time()
+                elapsed = current_time - start_time
+                
+                # Check for end of timeline
+                if elapsed >= self.sequence_duration:
+                    if self.sequence_loop:
+                        # Wrap back to start
+                        start_time = current_time - (elapsed % self.sequence_duration)
+                        elapsed = elapsed % self.sequence_duration
+                    else:
+                        # End playback and notify clients
+                        self.sequence_active = False
+                        self._apply_rumble(0.0, 0.0)
+                        if self.broadcast_callback:
+                            await self.broadcast_callback({"type": "sequence_finished"})
+                        break
+                
+                # Calculate interpolated vibration targets for this step
+                low_val = self._interpolate_intensity(self.sequence_low_track, elapsed)
+                high_val = self._interpolate_intensity(self.sequence_high_track, elapsed)
+                
+                # Set physical motor rumbles
+                self._apply_rumble(low_val, high_val)
+                
+                # Broadcast playhead position back to clients for oscilloscope/tracker updates (20Hz)
+                if self.broadcast_callback:
+                    await self.broadcast_callback({
+                        "type": "sequence_playhead",
+                        "time": elapsed,
+                        "low_val": low_val,
+                        "high_val": high_val
+                    })
+                
+                # Tick at 20Hz
+                await asyncio.sleep(0.05)
+                
+        except asyncio.CancelledError:
+            self._apply_rumble(0.0, 0.0)
+        except Exception as e:
+            logger.error(f"Error in sequence playback loop: {e}")
+            self._apply_rumble(0.0, 0.0)

@@ -24,6 +24,10 @@ export function useWebSocket(url: string) {
 
   const [lastPulse, setLastPulse] = useState<{ timestamp: number; duration: number; lowFreq: number; highFreq: number } | null>(null);
 
+  // Playback Sequencer States
+  const [sequenceActive, setSequenceActive] = useState(false);
+  const [playheadTime, setPlayheadTime] = useState(0);
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
 
@@ -76,6 +80,19 @@ export function useWebSocket(url: string) {
             lowFreq: msg.low_freq,
             highFreq: msg.high_freq,
           });
+        } else if (msg.type === 'sequence_playhead') {
+          setPlayheadTime(msg.time);
+          setSequenceActive(true);
+          // Sync low/high freq variables dynamically so visual waveform matches output
+          setState(prev => ({
+            ...prev,
+            lowFreq: msg.low_val !== undefined ? msg.low_val : prev.lowFreq,
+            highFreq: msg.high_val !== undefined ? msg.high_val : prev.highFreq
+          }));
+        } else if (msg.type === 'sequence_finished') {
+          setSequenceActive(false);
+          setPlayheadTime(0);
+          setState(prev => ({ ...prev, lowFreq: 0.0, highFreq: 0.0 }));
         }
       } catch (err) {
         console.error('WebSocket message parsing error:', err);
@@ -85,6 +102,8 @@ export function useWebSocket(url: string) {
     ws.onclose = () => {
       console.log('WebSocket disconnected. Reconnecting in 2 seconds...');
       setWsConnected(false);
+      setSequenceActive(false);
+      setPlayheadTime(0);
       // Reset hardware connection representation when server is unreachable
       setState(prev => ({ ...prev, connected: false, deviceName: 'None' }));
       
@@ -144,8 +163,35 @@ export function useWebSocket(url: string) {
 
   const sendStop = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      setSequenceActive(false);
+      setPlayheadTime(0);
       wsRef.current.send(JSON.stringify({
         type: 'stop',
+      }));
+    }
+  }, []);
+
+  // Playback Sequencer Controllers
+  const startSequence = useCallback((duration: number, loop: boolean, lowTrack: any[], highTrack: any[]) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      setSequenceActive(true);
+      setPlayheadTime(0);
+      wsRef.current.send(JSON.stringify({
+        type: 'start_sequence',
+        duration,
+        loop,
+        low_track: lowTrack,
+        high_track: highTrack
+      }));
+    }
+  }, []);
+
+  const stopSequence = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      setSequenceActive(false);
+      setPlayheadTime(0);
+      wsRef.current.send(JSON.stringify({
+        type: 'stop_sequence'
       }));
     }
   }, []);
@@ -154,8 +200,12 @@ export function useWebSocket(url: string) {
     wsConnected,
     ...state,
     lastPulse,
+    sequenceActive,
+    playheadTime,
     sendVibration,
     sendPulseConfig,
     sendStop,
+    startSequence,
+    stopSequence,
   };
 }

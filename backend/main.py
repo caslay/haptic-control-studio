@@ -146,6 +146,16 @@ async def websocket_endpoint(websocket: WebSocket):
                         "pulse_duration": controller.pulse_duration,
                     })
 
+                elif cmd_type == "start_sequence":
+                    duration = float(command.get("duration", 5.0))
+                    loop = bool(command.get("loop", True))
+                    low_track = list(command.get("low_track", []))
+                    high_track = list(command.get("high_track", []))
+                    await controller.start_sequence(duration, loop, low_track, high_track)
+
+                elif cmd_type == "stop_sequence":
+                    await controller.stop_sequence()
+
                 elif cmd_type == "ping":
                     await websocket.send_text(json.dumps({"type": "pong"}))
 
