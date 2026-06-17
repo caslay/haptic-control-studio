@@ -51,6 +51,10 @@ haptic_control/
  - **Custom Preset Manager:** Saves user patterns (including keyframe nodes and timeline durations) to `localStorage` under custom names, and provides custom deletion.
  - **Precision Timing Sliders:** Includes a Duration slider and a Loop Delay slider to customize sequence repetitions.
  - **Visual Delay Feedback Overlay:** When the sequencer is in its delay phase, a translucent glass blur overlay drops onto the SVG timelines displaying a live countdown timer (e.g., `Delaying: 1.2s`).
+ - **Ergonomic Layout:** Splitted preset load/save options into two separate, full-width rows inside a flex-column wrapper, preventing buttons from clipping or overflowing the grid boundaries.
+ - **Enhanced Canvas Space:** Expanded the graph timeline editor height by increasing `VIEWBOX_HEIGHT` from `150` to `250` SVG units, giving a cleaner aspect ratio and more space to place and modify points.
+ - **Overlay Hitboxes (r=20):** Keyframes are wrapped in `<g className="group/node">` containing a transparent circle with `r={20}` for mouse event targeting and a visible point `r={8}`. This provides a 3x larger mouse click and drag target, while changing colors and scaling up smoothly on hover.
+ - **Proximity click safeguards:** Implemented a Euclidean distance proximity check in SVG coordinates (25 units). Click-to-spawn keyframes are ignored if the coordinate is too close to any existing point, preventing duplicate or accidental point additions when users drag points.
  
  ### 🎨 Appearance Configurator ([ThemeDashboard.tsx](file:///c:/My%20Files/Work/Lab/haptic_control/frontend/src/components/ThemeDashboard.tsx))
  - Dynamically binds configuration values (Accent Colors, Background Themes, Typography, and Weights) to CSS Custom Variables (e.g. `--primary-color`).

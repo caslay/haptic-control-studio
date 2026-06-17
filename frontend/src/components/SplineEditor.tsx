@@ -19,7 +19,7 @@ interface SplineEditorProps {
 }
 
 const VIEWBOX_WIDTH = 1000;
-const VIEWBOX_HEIGHT = 150;
+const VIEWBOX_HEIGHT = 250;
 
 const getApiBase = () => {
   if (typeof window !== 'undefined') {
@@ -177,8 +177,9 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
 
   // Add Keyframe on click
   const handleCanvasClick = (e: React.MouseEvent<SVGSVGElement>, trackType: 'low' | 'high') => {
-    // Prevent adding if we are clicking on an existing circle node
-    if ((e.target as SVGElement).tagName === 'circle') return;
+    // Prevent adding if we are clicking on an existing circle node or its container/children
+    const target = e.target as SVGElement;
+    if (target.tagName === 'circle' || target.closest('.keyframe-node-group')) return;
 
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
@@ -192,7 +193,21 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
     const powerVal = Math.max(0.0, Math.min(1.0, getPowerFromY(svgY)));
 
     const isLow = trackType === 'low';
+    const track = isLow ? lowTrack : highTrack;
     const setTrack = isLow ? setLowTrack : setHighTrack;
+
+    // Proximity check: Avoid spawning keyframes too close to existing ones in SVG coordinates
+    const PROXIMITY_THRESHOLD = 25; // in SVG units
+    const isTooClose = track.some(k => {
+      const nodeX = getX(k.time);
+      const nodeY = getY(k.power);
+      const dx = nodeX - svgX;
+      const dy = nodeY - svgY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      return dist < PROXIMITY_THRESHOLD;
+    });
+
+    if (isTooClose) return;
 
     setSelectedPresetId(''); // Reset preset selection on modification
 
@@ -470,11 +485,11 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
       </div>
 
       {/* Preset Saving & Loading Library Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-2xl glass-panel border border-white/5 bg-black/10 text-xs">
-        {/* Left Side: Load Preset Dropdown */}
-        <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-4 p-4 rounded-2xl glass-panel border border-white/5 bg-black/10 text-xs">
+        {/* Row 1: Load Preset Dropdown */}
+        <div className="flex flex-col gap-1.5 w-full">
           <label className="text-textSecondary font-semibold text-[10px] uppercase tracking-wider">Load Preset Library</label>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <select
               value={selectedPresetId}
               onChange={(e) => handlePresetChange(e.target.value)}
@@ -508,10 +523,10 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
           </div>
         </div>
 
-        {/* Right Side: Save Current As Custom Preset */}
-        <form onSubmit={handleSavePreset} className="flex flex-col gap-1.5 justify-end">
+        {/* Row 2: Save Current As Custom Preset */}
+        <form onSubmit={handleSavePreset} className="flex flex-col gap-1.5 w-full">
           <label className="text-textSecondary font-semibold text-[10px] uppercase tracking-wider">Save Current Envelope</label>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full">
             <input
               type="text"
               placeholder="Preset Name..."
@@ -604,24 +619,41 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
 
               {/* Interactive Keyframe Circles */}
               {lowTrack.map((k) => (
-                <circle
-                  key={k.id}
-                  cx={getX(k.time)}
-                  cy={getY(k.power)}
-                  r={6}
-                  className={`cursor-ns-resize hover:scale-125 transition-transform ${
-                    draggingNode?.nodeId === k.id ? 'fill-white' : 'fill-primary'
-                  }`}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    setDraggingNode({ trackType: 'low', nodeId: k.id });
-                  }}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    handleNodeDoubleClick(k.id, 'low');
-                  }}
-                  style={{ stroke: 'rgba(255, 255, 255, 0.4)', strokeWidth: 1.5 }}
-                />
+                <g key={k.id} className="keyframe-node-group group/node">
+                  {/* Invisible larger click/drag target hitbox */}
+                  <circle
+                    cx={getX(k.time)}
+                    cy={getY(k.power)}
+                    r={20}
+                    fill="transparent"
+                    className="cursor-grab active:cursor-grabbing"
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setDraggingNode({ trackType: 'low', nodeId: k.id });
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleNodeDoubleClick(k.id, 'low');
+                    }}
+                  />
+                  {/* Visible circle node */}
+                  <circle
+                    cx={getX(k.time)}
+                    cy={getY(k.power)}
+                    r={8}
+                    className={`pointer-events-none transition-all duration-150 ${
+                      draggingNode?.nodeId === k.id
+                        ? 'fill-white scale-125'
+                        : 'fill-primary group-hover/node:fill-white group-hover/node:scale-125'
+                    }`}
+                    style={{
+                      stroke: 'rgba(255, 255, 255, 0.4)',
+                      strokeWidth: 1.5,
+                      transformOrigin: 'center',
+                      transformBox: 'fill-box'
+                    }}
+                  />
+                </g>
               ))}
 
               {/* Playhead Overlay */}
@@ -710,24 +742,41 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
 
               {/* Interactive Keyframe Circles */}
               {highTrack.map((k) => (
-                <circle
-                  key={k.id}
-                  cx={getX(k.time)}
-                  cy={getY(k.power)}
-                  r={6}
-                  className={`cursor-ns-resize hover:scale-125 transition-transform ${
-                    draggingNode?.nodeId === k.id ? 'fill-white' : 'fill-secondary'
-                  }`}
-                  onMouseDown={(e) => {
-                    e.stopPropagation();
-                    setDraggingNode({ trackType: 'high', nodeId: k.id });
-                  }}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    handleNodeDoubleClick(k.id, 'high');
-                  }}
-                  style={{ stroke: 'rgba(255, 255, 255, 0.4)', strokeWidth: 1.5 }}
-                />
+                <g key={k.id} className="keyframe-node-group group/node">
+                  {/* Invisible larger click/drag target hitbox */}
+                  <circle
+                    cx={getX(k.time)}
+                    cy={getY(k.power)}
+                    r={20}
+                    fill="transparent"
+                    className="cursor-grab active:cursor-grabbing"
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setDraggingNode({ trackType: 'high', nodeId: k.id });
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      handleNodeDoubleClick(k.id, 'high');
+                    }}
+                  />
+                  {/* Visible circle node */}
+                  <circle
+                    cx={getX(k.time)}
+                    cy={getY(k.power)}
+                    r={8}
+                    className={`pointer-events-none transition-all duration-150 ${
+                      draggingNode?.nodeId === k.id
+                        ? 'fill-white scale-125'
+                        : 'fill-secondary group-hover/node:fill-white group-hover/node:scale-125'
+                    }`}
+                    style={{
+                      stroke: 'rgba(255, 255, 255, 0.4)',
+                      strokeWidth: 1.5,
+                      transformOrigin: 'center',
+                      transformBox: 'fill-box'
+                    }}
+                  />
+                </g>
               ))}
 
               {/* Playhead Overlay */}
