@@ -175,6 +175,7 @@ async def websocket_endpoint(websocket: WebSocket):
             "pulse_enabled": controller.pulse_enabled,
             "pulse_interval": controller.pulse_interval,
             "pulse_duration": controller.pulse_duration,
+            "vibration_multiplier": controller.vibration_multiplier,
         }
         await websocket.send_text(json.dumps(state_msg))
 
@@ -236,6 +237,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 elif cmd_type == "stop_sequence":
                     await controller.stop_sequence()
+
+                elif cmd_type == "set_multiplier":
+                    multiplier = float(command.get("multiplier", 1.0))
+                    controller.vibration_multiplier = max(0.1, min(2.0, multiplier))
+                    await broadcast_to_all({
+                        "type": "state_sync",
+                        "vibration_multiplier": controller.vibration_multiplier
+                    })
 
                 elif cmd_type == "ping":
                     await websocket.send_text(json.dumps({"type": "pong"}))

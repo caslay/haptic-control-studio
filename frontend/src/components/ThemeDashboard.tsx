@@ -4,9 +4,10 @@ import { Palette, Type, Sliders, RefreshCw, X } from 'lucide-react';
 interface ThemeDashboardProps {
   isOpen: boolean;
   onClose: () => void;
+  activeWsUrl?: string;
 }
 
-export const ThemeDashboard: React.FC<ThemeDashboardProps> = ({ isOpen, onClose }) => {
+export const ThemeDashboard: React.FC<ThemeDashboardProps> = ({ isOpen, onClose, activeWsUrl }) => {
   // Theme Presets Definition
   const fontPresets = [
     { name: 'Outfit (Sleek Modern)', value: "'Outfit', 'Inter', sans-serif" },
@@ -51,7 +52,17 @@ export const ThemeDashboard: React.FC<ThemeDashboardProps> = ({ isOpen, onClose 
     { name: 'Ultra-Bold', value: '800' },
   ];
 
-  const getApiBase = () => {
+  // Dynamically resolve API base from WebSocket URL, with loopback fallback
+  const getApiBase = (wsUrl?: string) => {
+    if (wsUrl) {
+      try {
+        const url = new URL(wsUrl);
+        const protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+        return `${protocol}//${url.host}`;
+      } catch (e) {
+        console.error('Failed to parse WebSocket URL for API base, using fallback', e);
+      }
+    }
     if (typeof window !== 'undefined') {
       const hostname = window.location.hostname;
       if (hostname === 'localhost' || hostname === '127.0.0.1') {
@@ -61,7 +72,7 @@ export const ThemeDashboard: React.FC<ThemeDashboardProps> = ({ isOpen, onClose 
     return 'http://127.0.0.1:8000';
   };
 
-  const API_BASE = getApiBase();
+  const API_BASE = getApiBase(activeWsUrl);
 
   // Local state for loaded styles
   const [selectedFont, setSelectedFont] = useState(fontPresets[0].value);
@@ -121,7 +132,7 @@ export const ThemeDashboard: React.FC<ThemeDashboardProps> = ({ isOpen, onClose 
     };
 
     fetchTheme();
-  }, []);
+  }, [API_BASE]);
 
   // Sync state helpers
   const saveThemeToDb = async (font: string, primary: string, secondary: string, bg: string, size: string, weight: string) => {

@@ -16,22 +16,11 @@ interface SplineEditorProps {
   onDurationChange: (duration: number) => void;
   startSequence: (duration: number, loop: boolean, lowTrack: any[], highTrack: any[], loopDelay?: number) => void;
   stopSequence: () => void;
+  activeWsUrl?: string;
 }
 
 const VIEWBOX_WIDTH = 1000;
 const VIEWBOX_HEIGHT = 250;
-
-const getApiBase = () => {
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return `http://${hostname}:8000`;
-    }
-  }
-  return 'http://127.0.0.1:8000';
-};
-
-const API_BASE = getApiBase();
 
 export interface SavedPreset {
   id: string;
@@ -49,7 +38,8 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
   remainingDelay = 0.0,
   onDurationChange,
   startSequence,
-  stopSequence
+  stopSequence,
+  activeWsUrl
 }) => {
   // Loop state
   const [loopMode, setLoopMode] = useState(true);
@@ -59,6 +49,28 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
   const [savedPresets, setSavedPresets] = useState<SavedPreset[]>([]);
   const [newPresetName, setNewPresetName] = useState('');
   const [selectedPresetId, setSelectedPresetId] = useState('');
+
+  // Dynamically resolve API base from WebSocket URL, with loopback fallback
+  const getApiBase = (wsUrl?: string) => {
+    if (wsUrl) {
+      try {
+        const url = new URL(wsUrl);
+        const protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+        return `${protocol}//${url.host}`;
+      } catch (e) {
+        console.error('Failed to parse WebSocket URL for API base, using fallback', e);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      const hostname = window.location.hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return `http://${hostname}:8000`;
+      }
+    }
+    return 'http://127.0.0.1:8000';
+  };
+
+  const API_BASE = getApiBase(activeWsUrl);
 
   // Tracks State: Default tracks have nodes at start (t=0) and end (t=duration)
   const [lowTrack, setLowTrack] = useState<Keyframe[]>([
@@ -97,7 +109,7 @@ export const SplineEditor: React.FC<SplineEditorProps> = ({
       }
     };
     fetchPresets();
-  }, []);
+  }, [API_BASE]);
 
   // Adjust end node times if duration changes
   useEffect(() => {

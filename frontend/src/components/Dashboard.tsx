@@ -12,6 +12,7 @@ interface DashboardProps {
   pulseEnabled: boolean;
   pulseInterval: number;
   pulseDuration: number;
+  vibrationMultiplier: number;
   lastPulse: any;
   sequenceActive: boolean;
   playheadTime: number;
@@ -22,6 +23,7 @@ interface DashboardProps {
   sendStop: () => void;
   startSequence: (duration: number, loop: boolean, lowTrack: any[], highTrack: any[], loopDelay?: number) => void;
   stopSequence: () => void;
+  sendMultiplier: (multiplier: number) => void;
   onOpenTheme: () => void;
   // Connection Configuration Props
   activeWsUrl: string;
@@ -38,6 +40,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   pulseEnabled,
   pulseInterval,
   pulseDuration,
+  vibrationMultiplier,
   lastPulse,
   sequenceActive,
   playheadTime,
@@ -48,6 +51,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   sendStop,
   startSequence,
   stopSequence,
+  sendMultiplier,
   onOpenTheme,
   activeWsUrl,
   isAutoWsUrl,
@@ -64,6 +68,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [localHigh, setLocalHigh] = useState(highFreq);
   const [localInterval, setLocalInterval] = useState(pulseInterval);
   const [localDuration, setLocalDuration] = useState(pulseDuration);
+  
+  // Local dragging locks to prevent slider jumps on round-trips
+  const [isDraggingLow, setIsDraggingLow] = useState(false);
+  const [isDraggingHigh, setIsDraggingHigh] = useState(false);
+
+  // Local multiplier state
+  const [localMultiplier, setLocalMultiplier] = useState(() => {
+    try {
+      const stored = localStorage.getItem('haptic_vibration_multiplier');
+      return stored ? parseFloat(stored) : 1.0;
+    } catch {
+      return 1.0;
+    }
+  });
 
   // Connection settings modal state
   const [isConnModalOpen, setIsConnModalOpen] = useState(false);
@@ -74,14 +92,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setInputWsUrl(activeWsUrl);
   }, [activeWsUrl]);
 
-  // Sync local sliders state with server updates
+  // Sync local sliders state with server updates only when not dragging
   useEffect(() => {
-    setLocalLow(lowFreq);
-  }, [lowFreq]);
+    if (!isDraggingLow) {
+      setLocalLow(lowFreq);
+    }
+  }, [lowFreq, isDraggingLow]);
 
   useEffect(() => {
-    setLocalHigh(highFreq);
-  }, [highFreq]);
+    if (!isDraggingHigh) {
+      setLocalHigh(highFreq);
+    }
+  }, [highFreq, isDraggingHigh]);
 
   useEffect(() => {
     setLocalInterval(pulseInterval);
@@ -90,6 +112,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
   useEffect(() => {
     setLocalDuration(pulseDuration);
   }, [pulseDuration]);
+
+  // Sync local multiplier with server updates
+  useEffect(() => {
+    setLocalMultiplier(vibrationMultiplier);
+  }, [vibrationMultiplier]);
+
+  const handleMultiplierChange = (val: number) => {
+    setLocalMultiplier(val);
+    try {
+      localStorage.setItem('haptic_vibration_multiplier', val.toString());
+    } catch (err) {
+      console.error(err);
+    }
+    sendMultiplier(val);
+  };
 
   // Throttle helper to limit socket traffic to 20Hz (50ms)
   const throttleTimeout = useRef<number | null>(null);
@@ -296,6 +333,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       step="0.01"
                       value={localLow}
                       onChange={(e) => handleLowSlider(parseFloat(e.target.value))}
+                      onMouseDown={() => setIsDraggingLow(true)}
+                      onMouseUp={() => setIsDraggingLow(false)}
+                      onTouchStart={() => setIsDraggingLow(true)}
+                      onTouchEnd={() => setIsDraggingLow(false)}
                       disabled={!connected}
                       className="flex-1 accent-primary disabled:opacity-40 disabled:cursor-not-allowed"
                     />
@@ -330,6 +371,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       step="0.01"
                       value={localHigh}
                       onChange={(e) => handleHighSlider(parseFloat(e.target.value))}
+                      onMouseDown={() => setIsDraggingHigh(true)}
+                      onMouseUp={() => setIsDraggingHigh(false)}
+                      onTouchStart={() => setIsDraggingHigh(true)}
+                      onTouchEnd={() => setIsDraggingHigh(false)}
                       disabled={!connected}
                       className="flex-1 accent-secondary disabled:opacity-40 disabled:cursor-not-allowed"
                     />
@@ -492,6 +537,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 onDurationChange={setDuration}
                 startSequence={startSequence}
                 stopSequence={stopSequence}
+                activeWsUrl={activeWsUrl}
               />
             </div>
           )}
@@ -566,6 +612,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 }`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-secondary animate-pulse' : 'bg-rose-400'}`} />
                   {wsConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+
+              {/* Vibration Strength Boost Multiplier */}
+              <div className="space-y-2 p-3 rounded-2xl bg-black/35 border border-white/5 text-xs">
+                <div className="flex items-center justify-between font-semibold">
+                  <span className="text-textSecondary">Vibration Strength Boost</span>
+                  <span className="font-mono text-primary font-bold">{localMultiplier.toFixed(1)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.1"
+                  value={localMultiplier}
+                  onChange={(e) => handleMultiplierChange(parseFloat(e.target.value))}
+                  className="w-full accent-primary mt-1"
+                />
+                <span className="text-[9px] text-textSecondary leading-normal block mt-1">
+                  Boosts physical haptic motor outputs globally. Useful if rumble feels weak or dampened.
                 </span>
               </div>
 

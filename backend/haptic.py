@@ -61,6 +61,9 @@ class HapticController:
         self.sequence_high_track = []
         self.sequence_task: Optional[asyncio.Task] = None
 
+        # Vibration scaling multiplier
+        self.vibration_multiplier = 1.0
+
         # Lock to prevent concurrent rumble writes overriding each other
         self.rumble_lock = asyncio.Lock()
 
@@ -69,6 +72,10 @@ class HapticController:
         if not self.xinput or not self.connected:
             return
         
+        # Apply vibration multiplier
+        low = low * self.vibration_multiplier
+        high = high * self.vibration_multiplier
+
         # Clamp to 0.0 - 1.0
         low = max(0.0, min(1.0, low))
         high = max(0.0, min(1.0, high))
